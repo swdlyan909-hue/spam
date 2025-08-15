@@ -1,0 +1,5 @@
+Flask
+httpx
+requests
+pycryptodome
+protobuf
