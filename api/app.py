@@ -46,7 +46,7 @@ def send_friend():
     max_successful = 40
     token_index = 0
 
-    with ThreadPoolExecutor(max_workers=40) as executor:
+    with ThreadPoolExecutor(max_workers=1000) as executor:
         futures = {}
         while requests_sent < max_successful and token_index < len(tokens):
             # إرسال دفعة جديدة من الطلبات حتى نصل إلى 40
