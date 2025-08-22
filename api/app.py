@@ -1,12 +1,13 @@
 from flask import Flask, request, jsonify
 import httpx
-import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 app = Flask(__name__)
-
+lock = threading.Lock()
 MAX_SUCCESSFUL = 50  # الحد الأقصى لعدد طلبات الصداقة
 
-async def send_friend_request(client, token, uid):
+def send_friend_request(token, uid):
     url = f"https://add-friend-ecru.vercel.app/add_friend?token={token}&uid={uid}"
     headers = {
         'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)',
@@ -14,7 +15,7 @@ async def send_friend_request(client, token, uid):
         'Expect': '100-continue',
     }
     try:
-        resp = await client.get(url, headers=headers, timeout=10.0)
+        resp = httpx.get(url, headers=headers, timeout=5.0)  # timeout أقل لتسريع
         return token, resp.status_code == 200
     except httpx.RequestError:
         return token, False
@@ -33,7 +34,7 @@ def send_friend():
 
     # جلب التوكنات من API خارجي
     try:
-        token_data = httpx.get("https://auto-token-bngx.onrender.com/api/get_jwt", timeout=15).json()
+        token_data = httpx.get("https://auto-token-bngx.onrender.com/api/get_jwt", timeout=10).json()
         tokens_dict = token_data.get("tokens", {})
         if not tokens_dict:
             return jsonify({"error": "No tokens found"}), 500
@@ -42,32 +43,21 @@ def send_friend():
     except Exception as e:
         return jsonify({"error": f"Failed to fetch tokens: {e}"}), 500
 
-    # الدالة async لإرسال الطلبات جميعها
-    async def send_all_requests():
-        results = []
-        requests_sent = 0
+    results = []
+    requests_sent = 0
 
-        async with httpx.AsyncClient() as client:
-            tasks = []
-            for token in tokens:
-                if requests_sent + len(tasks) >= MAX_SUCCESSFUL:
-                    break
-                tasks.append(send_friend_request(client, token, player_id_int))
+    with ThreadPoolExecutor(max_workers=20) as executor:  # أقل من 40 لتقليل الضغط على Serverless
+        futures = {executor.submit(send_friend_request, token, player_id_int): token for token in tokens[:MAX_SUCCESSFUL]}
 
-            # جمع النتائج فور انتهاء كل طلب
-            for future in asyncio.as_completed(tasks):
-                token, success = await future
+        for future in as_completed(futures):
+            token, success = future.result()
+            with lock:
                 if success:
                     requests_sent += 1
                     status = "success"
                 else:
                     status = "failed"
                 results.append({"token": token[:20] + "...", "status": status})
-
-        return requests_sent, results
-
-    # تشغيل الحدث asyncio
-    requests_sent, results = asyncio.run(send_all_requests())
 
     return jsonify({
         "player_id": player_id_int,
