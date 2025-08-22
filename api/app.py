@@ -1,13 +1,12 @@
 from flask import Flask, request, jsonify
 import httpx
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+import asyncio
 
 app = Flask(__name__)
-lock = threading.Lock()
 
-# دالة لإرسال طلب صداقة باستخدام توكن و UID اللاعب
-def send_friend_request(token, uid):
+MAX_SUCCESSFUL = 40  # الحد الأقصى لعدد طلبات الصداقة
+
+async def send_friend_request(client, token, uid):
     url = f"https://add-friend-ecru.vercel.app/add_friend?token={token}&uid={uid}"
     headers = {
         'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)',
@@ -15,10 +14,10 @@ def send_friend_request(token, uid):
         'Expect': '100-continue',
     }
     try:
-        resp = httpx.get(url, headers=headers, timeout=10)
-        return resp.status_code == 200
+        resp = await client.get(url, headers=headers, timeout=10.0)
+        return token, resp.status_code == 200
     except httpx.RequestError:
-        return False
+        return token, False
 
 @app.route("/send_friend", methods=["GET"])
 def send_friend():
@@ -32,52 +31,43 @@ def send_friend():
     except ValueError:
         return jsonify({"error": "player_id must be an integer"}), 400
 
-    # جلب التوكنات من API خارجي وتحويلها إلى قائمة
+    # جلب التوكنات من API خارجي
     try:
         token_data = httpx.get("https://auto-token-bngx.onrender.com/api/get_jwt", timeout=15).json()
         tokens_dict = token_data.get("tokens", {})
         if not tokens_dict:
             return jsonify({"error": "No tokens found"}), 500
 
-        tokens = list(tokens_dict.values())  # فقط الـ JWT tokens
+        tokens = list(tokens_dict.values())  # قائمة التوكنات فقط
     except Exception as e:
         return jsonify({"error": f"Failed to fetch tokens: {e}"}), 500
 
-    results = []
-    requests_sent = 0
-    max_successful = 100
-    token_index = 0
+    # الدالة async لإرسال الطلبات جميعها
+    async def send_all_requests():
+        results = []
+        requests_sent = 0
 
-    with ThreadPoolExecutor(max_workers=40) as executor:
-        futures = {}
-        # حلقة لإرسال الطلبات حتى نصل للحد الأقصى
-        while requests_sent < max_successful and token_index < len(tokens):
-            # إرسال دفعة جديدة من الطلبات
-            while len(futures) < 40 and token_index < len(tokens) and requests_sent + len(futures) < max_successful:
-                token = tokens[token_index]
-                token_index += 1
-                futures[executor.submit(send_friend_request, token, player_id_int)] = token
-
-            # انتظار النتائج وإنهاء المهام المكتملة
-            done = as_completed(futures)
-            for future in done:
-                token = futures[future]
-                try:
-                    success = future.result()
-                except Exception:
-                    success = False
-
-                with lock:
-                    if success:
-                        requests_sent += 1
-                        results.append({"token": token[:20] + "...", "status": "success"})
-                    else:
-                        results.append({"token": token[:20] + "...", "status": "failed"})
-
-                del futures[future]
-
-                if requests_sent >= max_successful:
+        async with httpx.AsyncClient() as client:
+            tasks = []
+            for token in tokens:
+                if requests_sent + len(tasks) >= MAX_SUCCESSFUL:
                     break
+                tasks.append(send_friend_request(client, token, player_id_int))
+
+            # جمع النتائج فور انتهاء كل طلب
+            for future in asyncio.as_completed(tasks):
+                token, success = await future
+                if success:
+                    requests_sent += 1
+                    status = "success"
+                else:
+                    status = "failed"
+                results.append({"token": token[:20] + "...", "status": status})
+
+        return requests_sent, results
+
+    # تشغيل الحدث asyncio
+    requests_sent, results = asyncio.run(send_all_requests())
 
     return jsonify({
         "player_id": player_id_int,
