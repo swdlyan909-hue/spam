@@ -45,7 +45,7 @@ def send_friend():
 
     results = []
     requests_sent = 0
-    max_successful = 40
+    max_successful = 100
     token_index = 0
 
     with ThreadPoolExecutor(max_workers=40) as executor:
