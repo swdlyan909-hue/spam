@@ -4,9 +4,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
 app = Flask(__name__)
-
 lock = threading.Lock()
 
+# دالة لإرسال طلب صداقة باستخدام توكن و UID اللاعب
 def send_friend_request(token, uid):
     url = f"https://add-friend-ecru.vercel.app/add_friend?token={token}&uid={uid}"
     headers = {
@@ -32,12 +32,14 @@ def send_friend():
     except ValueError:
         return jsonify({"error": "player_id must be an integer"}), 400
 
-    # جلب التوكنات من API خارجي
+    # جلب التوكنات من API خارجي وتحويلها إلى قائمة
     try:
         token_data = httpx.get("https://auto-token-bngx.onrender.com/api/get_jwt", timeout=15).json()
-        tokens = token_data.get("tokens", [])
-        if not tokens:
+        tokens_dict = token_data.get("tokens", {})
+        if not tokens_dict:
             return jsonify({"error": "No tokens found"}), 500
+
+        tokens = list(tokens_dict.values())  # فقط الـ JWT tokens
     except Exception as e:
         return jsonify({"error": f"Failed to fetch tokens: {e}"}), 500
 
@@ -46,18 +48,19 @@ def send_friend():
     max_successful = 40
     token_index = 0
 
-    with ThreadPoolExecutor(max_workers=1000) as executor:
+    with ThreadPoolExecutor(max_workers=40) as executor:
         futures = {}
+        # حلقة لإرسال الطلبات حتى نصل للحد الأقصى
         while requests_sent < max_successful and token_index < len(tokens):
-            # إرسال دفعة جديدة من الطلبات حتى نصل إلى 40
+            # إرسال دفعة جديدة من الطلبات
             while len(futures) < 40 and token_index < len(tokens) and requests_sent + len(futures) < max_successful:
                 token = tokens[token_index]
                 token_index += 1
                 futures[executor.submit(send_friend_request, token, player_id_int)] = token
 
-            # انتظار النتائج
-            done, _ = as_completed(futures), futures.copy()
-            for future in list(futures.keys()):
+            # انتظار النتائج وإنهاء المهام المكتملة
+            done = as_completed(futures)
+            for future in done:
                 token = futures[future]
                 try:
                     success = future.result()
