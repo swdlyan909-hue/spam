@@ -4,7 +4,7 @@ import asyncio
 
 app = Flask(__name__)
 
-MAX_SUCCESSFUL = 100  # الحد الأقصى لعدد طلبات الصداقة
+MAX_SUCCESSFUL = 50  # الحد الأقصى لعدد طلبات الصداقة
 
 async def send_friend_request(client, token, uid):
     url = f"https://add-friend-ecru.vercel.app/add_friend?token={token}&uid={uid}"
@@ -14,7 +14,7 @@ async def send_friend_request(client, token, uid):
         'Expect': '100-continue',
     }
     try:
-        resp = await client.get(url, headers=headers, timeout=0.7)
+        resp = await client.get(url, headers=headers, timeout=10.0)
         return token, resp.status_code == 200
     except httpx.RequestError:
         return token, False
