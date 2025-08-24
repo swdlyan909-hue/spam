@@ -6,7 +6,7 @@ import time
 
 app = Flask(__name__)
 lock = threading.Lock()
-MAX_SUCCESSFUL = 50  # عدد الطلبات الناجحة المطلوب
+MAX_SUCCESSFUL = 100  # عدد الطلبات الناجحة المطلوب
 
 def send_friend_request(token, uid):
     url = f"https://add-friend-ecru.vercel.app/add_friend?token={token}&uid={uid}"
@@ -49,7 +49,7 @@ def send_friend():
     token_index = 0
     total_tokens = len(tokens)
 
-    with ThreadPoolExecutor(max_workers=50) as executor:
+    with ThreadPoolExecutor(max_workers=200) as executor:
         futures = {}
         while requests_sent < MAX_SUCCESSFUL:
             # أضف المزيد من الطلبات إذا بقيت توكنات
