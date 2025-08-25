@@ -6,7 +6,7 @@ import time
 
 app = Flask(__name__)
 lock = threading.Lock()
-MAX_SUCCESSFUL = 100  # عدد الطلبات الناجحة المطلوب
+MAX_SUCCESSFUL = 50  # عدد الطلبات الناجحة المطلوب
 
 def send_friend_request(token, uid):
     url = f"https://add-friend-teal.vercel.app/add_friend?token={token}&uid={uid}"
