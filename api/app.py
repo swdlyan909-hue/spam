@@ -2,13 +2,14 @@ from flask import Flask, request, jsonify
 import httpx
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import time
 
 app = Flask(__name__)
 lock = threading.Lock()
-MAX_SUCCESSFUL = 20  # عدد الطلبات الناجحة المطلوب
+MAX_SUCCESSFUL = 10  # عدد الطلبات الناجحة المطلوب
 
 def send_friend_request(token, uid):
-    url = f"https://add-friend-teal.vercel.app/add_friend?token={token}&uid={uid}"
+    url = f"https://add-friend-ecru.vercel.app/add_friend?token={token}&uid={uid}"
     headers = {
         'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)',
         'Connection': 'Keep-Alive',
@@ -23,6 +24,7 @@ def send_friend_request(token, uid):
 @app.route("/send_friend", methods=["GET"])
 def send_friend():
     player_id = request.args.get("player_id")
+
     if not player_id:
         return jsonify({"error": "player_id is required"}), 400
 
@@ -44,18 +46,47 @@ def send_friend():
 
     results = []
     requests_sent = 0
+    token_index = 0
+    total_tokens = len(tokens)
 
-    with ThreadPoolExecutor(max_workers=min(50, len(tokens))) as executor:
-        futures = {executor.submit(send_friend_request, token, player_id_int): token for token in tokens}
+    with ThreadPoolExecutor(max_workers=200) as executor:
+        futures = {}
+        while requests_sent < MAX_SUCCESSFUL:
+            # أضف المزيد من الطلبات إذا بقيت توكنات
+            while token_index < total_tokens and len(futures) < 20:
+                token = tokens[token_index]
+                token_index += 1
+                futures[executor.submit(send_friend_request, token, player_id_int)] = token
 
-        for future in as_completed(futures):
-            token, success = future.result()
-            status = "success" if success else "failed"
-            results.append({"token": token[:20] + "...", "status": status})
-            if success:
-                requests_sent += 1
-            if requests_sent >= MAX_SUCCESSFUL:
-                break
+            if not futures:
+                break  # لا توجد طلبات متبقية
+
+            # انتظر انتهاء أي Future
+            done, _ = as_completed(futures), futures.copy()
+            for future in list(futures.keys()):
+                token = futures[future]
+                try:
+                    success = future.result()
+                except Exception:
+                    success = False
+
+                with lock:
+                    if success[1]:
+                        requests_sent += 1
+                        status = "success"
+                    else:
+                        status = "failed"
+                    results.append({"token": token[:20] + "...", "status": status})
+
+                del futures[future]
+
+                if requests_sent >= MAX_SUCCESSFUL:
+                    break
+
+            # إذا نفدت التوكنات وأي طلبات ما زالت لم تنجح، أعد المحاولة بعد قليل
+            if token_index >= total_tokens and requests_sent < MAX_SUCCESSFUL:
+                token_index = 0  # أعد التوكنات كلها
+                time.sleep(1)   # فترة قصيرة قبل إعادة المحاولة
 
     return jsonify({
         "player_id": player_id_int,
