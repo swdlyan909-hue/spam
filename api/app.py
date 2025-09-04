@@ -6,7 +6,7 @@ import time
 
 app = Flask(__name__)
 lock = threading.Lock()
-MAX_SUCCESSFUL = 20  # عدد الطلبات الناجحة المطلوب
+MAX_SUCCESSFUL = 50  # عدد الطلبات الناجحة المطلوب
 
 # قائمة الـUIDs التي تريد استخدامها
 UIDS_TO_USE = [
