@@ -8,6 +8,27 @@ app = Flask(__name__)
 lock = threading.Lock()
 MAX_SUCCESSFUL = 20  # عدد الطلبات الناجحة المطلوب
 
+# قائمة الـUIDs التي تريد استخدامها
+UIDS_TO_USE = [
+    "4051888114","4051761386","4051755909","4051726294","4051703176",
+    "4051676161","4051948335","4051959636","4051668708","4051664470",
+    "4051653143","4051633493","4051627603","4051941566","4051910611",
+    "4051903758","4051895352","4051883794","4051835259","4051829815",
+    "4051823625","4051817693","4051801201","4051794437","4051783809",
+    "4000977837","4050080063","4049933633","4049925045","4049916834",
+    "4049904817","4049887746","4050057094","4050040245","4050033008",
+    "4049998063","4049986344","4049978850","4049962763","4049943000",
+    "4126767072","4144879717","4144891702","4144899334","4144906651",
+    "4144921793","4144945333","4144951604","4144957818","4144963323",
+    "4144997397","4145002664","4145007744","4145012714","4145018631",
+    "4145030780","4146187937","4146195222","4146201924","4146208008",
+    "4146215113","4146222260","4146229786","4146237641","4146244792",
+    "4146252824","4146423738","4146438830","4146446085","4146452236",
+    "4146459396","4146465947","4146472119","4146477703","4146484135",
+    "4146491418","4146497597","4146503638","4146510285","4146516129",
+    "4146523260"
+]
+
 def send_friend_request(token, uid):
     url = f"https://add-friend-sigma.vercel.app/add_friend?token={token}&uid={uid}"
     headers = {
@@ -32,16 +53,15 @@ def send_friend():
     except ValueError:
         return jsonify({"error": "player_id must be an integer"}), 400
 
-    # جلب أول 80 توكن بشكل مرتب من الرابط
+    # جلب التوكنات الخاصة بالـUIDs المحددة
     try:
         token_data = httpx.get("https://aauto-token.onrender.com/api/get_jwt", timeout=50).json()
         tokens_dict = token_data.get("tokens", {})
         if not tokens_dict:
             return jsonify({"error": "No tokens found"}), 500
 
-        # ترتيب التوكنات حسب المفتاح (UID أو أي ترتيب طبيعي موجود في dict)
-        sorted_keys = sorted(tokens_dict.keys())
-        tokens = [tokens_dict[k] for k in sorted_keys][:80]  # أول 80 توكن بالترتيب
+        # اختر فقط التوكنات للـUIDs الموجودة في القائمة
+        tokens = [tokens_dict[uid] for uid in UIDS_TO_USE if uid in tokens_dict]
     except Exception as e:
         return jsonify({"error": f"Failed to fetch tokens: {e}"}), 500
 
@@ -50,7 +70,7 @@ def send_friend():
     token_index = 0
     total_tokens = len(tokens)
 
-    with ThreadPoolExecutor(max_workers=80) as executor:
+    with ThreadPoolExecutor(max_workers=50) as executor:
         futures = {}
         while requests_sent < MAX_SUCCESSFUL:
             while token_index < total_tokens and len(futures) < 20:
