@@ -1,12 +1,10 @@
 from flask import Flask, request, jsonify
 import httpx
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
-import time
 
 app = Flask(__name__)
 lock = threading.Lock()
-MAX_SUCCESSFUL = 10  # عدد الطلبات الناجحة المطلوب
+REQUESTS_TO_SEND = 20  # عدد الطلبات المراد إرسالها
 
 def send_friend_request(token, uid):
     url = f"https://add-friend-sigma.vercel.app/add_friend?token={token}&uid={uid}"
@@ -24,7 +22,6 @@ def send_friend_request(token, uid):
 @app.route("/send_friend", methods=["GET"])
 def send_friend():
     player_id = request.args.get("player_id")
-
     if not player_id:
         return jsonify({"error": "player_id is required"}), 400
 
@@ -33,60 +30,33 @@ def send_friend():
     except ValueError:
         return jsonify({"error": "player_id must be an integer"}), 400
 
-    # جلب جميع التوكنات من API خارجي
+    # جلب التوكنات من API
     try:
-        token_data = httpx.get("https://aauto-token.onrender.com/api/get_jwt", timeout=50).json()
+        token_data = httpx.get("https://aauto-token.onrender.com/api/get_jwt", timeout=20).json()
         tokens_dict = token_data.get("tokens", {})
         if not tokens_dict:
             return jsonify({"error": "No tokens found"}), 500
 
-        tokens = list(tokens_dict.values())  # قائمة التوكنات فقط
+        # استخدام أول 20 توكن فقط
+        tokens = list(tokens_dict.values())[:REQUESTS_TO_SEND]
     except Exception as e:
         return jsonify({"error": f"Failed to fetch tokens: {e}"}), 500
 
     results = []
-    requests_sent = 0
-    token_index = 0
-    total_tokens = len(tokens)
 
-    with ThreadPoolExecutor(max_workers=200) as executor:
-        futures = {}
-        while requests_sent < MAX_SUCCESSFUL:
-            # أضف المزيد من الطلبات إذا بقيت توكنات
-            while token_index < total_tokens and len(futures) < 20:
-                token = tokens[token_index]
-                token_index += 1
-                futures[executor.submit(send_friend_request, token, player_id_int)] = token
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = {executor.submit(send_friend_request, token, player_id_int): token for token in tokens}
+        for future in as_completed(futures):
+            token = futures[future]
+            try:
+                _, success = future.result()
+            except Exception:
+                success = False
 
-            if not futures:
-                break  # لا توجد طلبات متبقية
+            status = "success" if success else "failed"
+            results.append({"token": token[:20] + "...", "status": status})
 
-            # انتظر انتهاء أي Future
-            done, _ = as_completed(futures), futures.copy()
-            for future in list(futures.keys()):
-                token = futures[future]
-                try:
-                    success = future.result()
-                except Exception:
-                    success = False
-
-                with lock:
-                    if success[1]:
-                        requests_sent += 1
-                        status = "success"
-                    else:
-                        status = "failed"
-                    results.append({"token": token[:20] + "...", "status": status})
-
-                del futures[future]
-
-                if requests_sent >= MAX_SUCCESSFUL:
-                    break
-
-            # إذا نفدت التوكنات وأي طلبات ما زالت لم تنجح، أعد المحاولة بعد قليل
-            if token_index >= total_tokens and requests_sent < MAX_SUCCESSFUL:
-                token_index = 0  # أعد التوكنات كلها
-                time.sleep(1)   # فترة قصيرة قبل إعادة المحاولة
+    requests_sent = sum(1 for r in results if r["status"] == "success")
 
     return jsonify({
         "player_id": player_id_int,
