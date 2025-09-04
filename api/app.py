@@ -32,13 +32,16 @@ def send_friend():
     except ValueError:
         return jsonify({"error": "player_id must be an integer"}), 400
 
-    # جلب أول 80 توكن فقط
+    # جلب أول 80 توكن بشكل مرتب من الرابط
     try:
         token_data = httpx.get("https://aauto-token.onrender.com/api/get_jwt", timeout=50).json()
         tokens_dict = token_data.get("tokens", {})
         if not tokens_dict:
             return jsonify({"error": "No tokens found"}), 500
-        tokens = list(tokens_dict.values())[:80]  # <-- أول 80 توكن
+
+        # ترتيب التوكنات حسب المفتاح (UID أو أي ترتيب طبيعي موجود في dict)
+        sorted_keys = sorted(tokens_dict.keys())
+        tokens = [tokens_dict[k] for k in sorted_keys][:80]  # أول 80 توكن بالترتيب
     except Exception as e:
         return jsonify({"error": f"Failed to fetch tokens: {e}"}), 500
 
