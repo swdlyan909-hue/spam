@@ -30,7 +30,7 @@ UIDS_TO_USE = [
 ]
 
 def send_friend_request(token, uid):
-    url = f"https://add-friend-henna.vercel.app/add_friend?token={token}&uid={uid}"
+    url = f"https://add-friend-weld.vercel.app/add_friend?token={token}&uid={uid}"
     headers = {
         'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)',
         'Connection': 'Keep-Alive',
